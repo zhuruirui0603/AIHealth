@@ -34,9 +34,6 @@ export default function ChatMessage({ message, isStreaming }: ChatMessageProps) 
             )}
           </>
         )}
-        {isStreaming && (
-          <span className="streaming-cursor" />
-        )}
       </div>
     </div>
   );

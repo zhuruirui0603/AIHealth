@@ -4,11 +4,11 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useNutriHealthRuntime } from "@/hooks/useNutriHealthRuntime";
 import ConversationList from "@/components/ConversationList";
 import MyThread from "@/components/assistant/MyThread";
-import { ThreadPrimitive } from "@assistant-ui/react";
 
 export default function Home() {
   const {
     runtime,
+    messages,
     isRunning,
     conversationId,
     conversations,
@@ -81,6 +81,8 @@ export default function Home() {
               onQuickAction={(msg) => {
                 runtime.thread.append(msg);
               }}
+              messages={messages}
+              isStreaming={isRunning}
             />
           </div>
         </div>

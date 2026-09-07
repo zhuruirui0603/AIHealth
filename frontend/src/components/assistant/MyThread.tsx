@@ -3,11 +3,10 @@
 import {
   ThreadPrimitive,
   ComposerPrimitive,
-  MessagePrimitive,
-  useMessagePartData,
 } from "@assistant-ui/react";
 import CitationCard from "../CitationCard";
-import type { KnowledgeSource } from "@/types/chat";
+import MarkdownRenderer from "../MarkdownRenderer";
+import type { KnowledgeSource, Message } from "@/types/chat";
 
 const QUICK_ACTIONS = [
   { icon: "🥗", label: "今天吃什么" },
@@ -41,45 +40,44 @@ function MyComposer() {
   );
 }
 
-function SourcesDisplay() {
-  const dataPart = useMessagePartData("sources");
-  if (!dataPart) return null;
-  const sources = (dataPart as any).data as KnowledgeSource[];
-  if (!sources || sources.length === 0) return null;
+function ChatMessage({ message, isStreaming }: { message: Message; isStreaming?: boolean }) {
+  const isUser = message.role === "user";
 
   return (
-    <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
-      <p className="text-xs font-medium text-gray-500">参考来源</p>
-      {sources.map((s, idx) => (
-        <CitationCard key={s.chunk_id || idx} source={s} index={idx + 1} />
-      ))}
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
+      <div
+        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+          isUser ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-800"
+        }`}
+      >
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        ) : (
+          <>
+            <MarkdownRenderer content={message.content} />
+            {message.sources && message.sources.length > 0 && (
+              <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
+                <p className="text-xs font-medium text-gray-500">参考来源</p>
+                {message.sources.map((source, idx) => (
+                  <CitationCard key={source.chunk_id || idx} source={source} index={idx + 1} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-function MyMessage() {
-  return (
-    <MessagePrimitive.Root>
-      <MessagePrimitive.If user={true}>
-        <div className="flex justify-end mb-4">
-          <div className="max-w-[80%] rounded-2xl bg-primary-600 px-4 py-3 text-white">
-            <MessagePrimitive.Parts />
-          </div>
-        </div>
-      </MessagePrimitive.If>
-      <MessagePrimitive.If assistant={true}>
-        <div className="flex justify-start mb-4">
-          <div className="max-w-[80%] rounded-2xl bg-gray-100 px-4 py-3 text-gray-800">
-            <MessagePrimitive.Parts />
-            <SourcesDisplay />
-          </div>
-        </div>
-      </MessagePrimitive.If>
-    </MessagePrimitive.Root>
-  );
+interface MyThreadProps {
+  quickPrompts: string[];
+  onQuickAction: (msg: string) => void;
+  messages: Message[];
+  isStreaming: boolean;
 }
 
-function MyThread({ quickPrompts, onQuickAction }: { quickPrompts: string[]; onQuickAction: (msg: string) => void }) {
+function MyThread({ quickPrompts, onQuickAction, messages, isStreaming }: MyThreadProps) {
   return (
     <ThreadPrimitive.Root
       className="flex h-full flex-col bg-gray-50"
@@ -90,7 +88,7 @@ function MyThread({ quickPrompts, onQuickAction }: { quickPrompts: string[]; onQ
         className="chat-scroll flex-1 overflow-y-auto px-4 py-6"
       >
         <div className="mx-auto max-w-3xl">
-          <ThreadPrimitive.Empty>
+          {messages.length === 0 ? (
             <div className="mb-6">
               <p className="mb-3 text-center text-sm text-gray-400">
                 选择一个快捷问题，或直接输入你的健康问题
@@ -111,14 +109,19 @@ function MyThread({ quickPrompts, onQuickAction }: { quickPrompts: string[]; onQ
                 ))}
               </div>
             </div>
-          </ThreadPrimitive.Empty>
-
-          <ThreadPrimitive.Messages
-            components={{
-              UserMessage: MyMessage,
-              AssistantMessage: MyMessage,
-            }}
-          />
+          ) : (
+            messages.map((msg, idx) => (
+              <ChatMessage
+                key={msg.id || idx}
+                message={msg}
+                isStreaming={
+                  isStreaming &&
+                  idx === messages.length - 1 &&
+                  msg.role === "assistant"
+                }
+              />
+            ))
+          )}
         </div>
       </ThreadPrimitive.Viewport>
       <MyComposer />
@@ -126,5 +129,5 @@ function MyThread({ quickPrompts, onQuickAction }: { quickPrompts: string[]; onQ
   );
 }
 
-export { MyThread, MyMessage, MyComposer };
+export { MyThread, ChatMessage, MyComposer };
 export default MyThread;
