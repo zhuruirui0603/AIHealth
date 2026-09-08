@@ -6,17 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:knowledge": "node scripts/build-knowledge-bundle.js"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.15.18",
-    "@assistant-ui/react-markdown": "^0.14.14",
+    "@ant-design/icons": "6.3.4",
+    "@ant-design/x": "2.9.0",
+    "@ant-design/x-markdown": "2.9.0",
+    "@ant-design/x-sdk": "2.9.0",
+    "antd": "6.6.3",
+    "dexie": "^4.0.10",
     "next": "14.2.15",
     "radix-ui": "^1.6.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.1",
-    "remark-gfm": "^4.0.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
