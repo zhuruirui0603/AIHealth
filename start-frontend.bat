@@ -1,4 +1,4 @@
 @echo off
-echo Starting NutriHealth AI Frontend...
-cd /d "%~dp0frontend"
+echo Starting NutriHealth AI...
+cd /d "%~dp0"
 npm run dev
