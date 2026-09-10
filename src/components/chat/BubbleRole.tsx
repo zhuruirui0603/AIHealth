@@ -97,5 +97,15 @@ export const bubbleRole = {
       );
     },
   },
-  user: { placement: "end" as const },
+  user: {
+    placement: "end" as const,
+    styles: {
+      content: {
+        background:
+          "linear-gradient(135deg, var(--color-primary), var(--color-accent))",
+        color: "#ffffff",
+        borderRadius: 16,
+      },
+    },
+  },
 };

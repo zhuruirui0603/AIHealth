@@ -52,6 +52,21 @@ function ChatShellInner() {
   const [searchText, setSearchText] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // ---------- 桌面侧栏展开/收起 ----------
+  // md 断点 = 768px。窗口 ≥ md 时默认展开侧栏；< md 时收起（由移动端抽屉接管）。
+  // 用户也可手动切换（汉堡按钮 / 侧栏内折叠按钮）。
+  const DESKTOP_BREAKPOINT = 768;
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+
+  useEffect(() => {
+    const sync = () => {
+      setSidebarExpanded(window.innerWidth >= DESKTOP_BREAKPOINT);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
+
   // ---------- 用户画像 ----------
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -149,7 +164,9 @@ function ChatShellInner() {
   // Bubble.List 的 autoScroll 仅在新消息进入时跳到底部，
   // 流式内容增长时不会持续跟随。这里监听最后一条消息的内容变化，
   // 在 streaming / loading 状态下显式调用 scrollTo 将视窗贴底。
-  const listRef = useRef<HTMLDivElement>(null);
+  // 注意：Bubble.List 的 ref 是 BubbleListRef 对象（含 nativeElement 等方法），
+  // 不是直接的 HTMLDivElement，所以用 callback ref 拿到根 DOM 节点。
+  const listRootRef = useRef<HTMLDivElement | null>(null);
   const lastContentRef = useRef<string>("");
   const lastMsgIdRef = useRef<string>("");
 
@@ -164,15 +181,13 @@ function ChatShellInner() {
     const last = messages[messages.length - 1];
     const content = String(last.message.content ?? "");
     const msgId = String(last.id);
-    const isStreaming =
-      last.status === "loading" || last.status === "updating";
     // 同一条消息且内容未变化时跳过
     if (msgId === lastMsgIdRef.current && content === lastContentRef.current)
       return;
     lastMsgIdRef.current = msgId;
     lastContentRef.current = content;
 
-    const node = listRef.current;
+    const node = listRootRef.current;
     if (!node) return;
     const scrollBox = node.querySelector<HTMLElement>(
       ".ant-bubble-list-scroll-box",
@@ -180,12 +195,11 @@ function ChatShellInner() {
     if (!scrollBox) return;
     // column-reverse（autoScroll）模式下贴底 = scrollTop 0；
     // 普通模式下贴底 = scrollHeight
+    // 用 window.getComputedStyle 显式绑定，避免 Illegal invocation
     const isReverse =
-      getComputedStyle(scrollBox).flexDirection === "column-reverse";
-    scrollBox.scrollTo({
-      top: isReverse ? 0 : scrollBox.scrollHeight,
-      behavior: "auto",
-    });
+      window.getComputedStyle(scrollBox).flexDirection === "column-reverse";
+    // 直接赋值 scrollTop，避免 scrollTo 的 Illegal invocation 问题
+    scrollBox.scrollTop = isReverse ? 0 : scrollBox.scrollHeight;
   }, [messages]);
 
   // ---------- 消息落库 + 标题生成 ----------
@@ -392,20 +406,23 @@ function ChatShellInner() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden chat-canvas">
-      {/* 桌面侧栏 */}
-      <div
-        className="hidden h-full w-64 flex-shrink-0 md:block"
+      {/* 桌面侧栏：宽度过渡动画（motion animate） */}
+      <motion.div
+        className="h-full flex-shrink-0 overflow-hidden"
+        initial={{ width: 256 }}
+        animate={{ width: sidebarExpanded ? 256 : 0 }}
+        transition={{ type: "tween", duration: 0.28, ease: "easeInOut" }}
         style={{ borderRight: "1px solid var(--color-border)" }}
       >
         {sidebar}
-      </div>
+      </motion.div>
 
-      {/* 移动端侧栏（抽屉） */}
+      {/* 移动端侧栏（抽屉）：仅在侧栏收起时可用 */}
       <AnimatePresence>
-        {sidebarOpen && (
+        {sidebarOpen && !sidebarExpanded && (
           <>
             <motion.div
-              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              className="fixed inset-0 z-30 bg-black/40"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -413,7 +430,7 @@ function ChatShellInner() {
               onClick={() => setSidebarOpen(false)}
             />
             <motion.div
-              className="fixed left-0 top-0 z-40 h-full w-64 shadow-xl md:hidden"
+              className="fixed left-0 top-0 z-40 h-full w-64 shadow-xl"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -425,13 +442,31 @@ function ChatShellInner() {
         )}
       </AnimatePresence>
 
-      {/* 主区域：内容占满全屏，导航栏与发送框 fixed 悬浮 */}
-      <div className="absolute inset-0 flex flex-col md:left-64">
-        <ChatHeader onOpenSidebar={() => setSidebarOpen(true)} />
+      {/* 主区域：内容占满全屏，left 随侧栏宽度过渡 */}
+      <motion.div
+        className="absolute inset-0 flex flex-col"
+        initial={{ left: 256 }}
+        animate={{ left: sidebarExpanded ? 256 : 0 }}
+        transition={{ type: "tween", duration: 0.28, ease: "easeInOut" }}
+      >
+        <ChatHeader
+          onOpenSidebar={() => {
+            if (sidebarExpanded) {
+              // 已展开时点击无操作（按钮本身已隐藏）
+            } else if (window.innerWidth >= DESKTOP_BREAKPOINT) {
+              // 桌面端：展开桌面侧栏
+              setSidebarExpanded(true);
+            } else {
+              // 移动端：打开抽屉
+              setSidebarOpen(true);
+            }
+          }}
+          sidebarExpanded={sidebarExpanded}
+        />
 
-        {/* 消息内容区 */}
+        {/* 消息内容区（发送框在此区域内绝对定位） */}
         <main
-          className="flex-1 overflow-hidden"
+          className="relative flex-1 overflow-hidden"
         >
           <div
             className="mx-auto flex h-full w-full flex-col"
@@ -456,8 +491,16 @@ function ChatShellInner() {
               </div>
             ) : (
               <Bubble.List
-                ref={listRef as any}
-                style={{ flex: 1, minHeight: 0, padding: '0 16px' }}
+                ref={(el: any) => {
+                  // Bubble.List ref 是 BubbleListRef 对象，取 nativeElement 作为根 DOM
+                  listRootRef.current = el?.nativeElement ?? null;
+                }}
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  maxWidth: "var(--sender-max-width)",
+                  margin: "0 auto",
+                }}
                 role={bubbleRole}
                 autoScroll
                 items={messages.map(({ id, message, status }, idx) => {
@@ -498,17 +541,16 @@ function ChatShellInner() {
               />
             )}
           </div>
-        </main>
 
-        {/* 悬浮发送框（DIY：胶囊输入框 + 独立发送按钮） */}
-        <div
-          className="fixed inset-x-0 z-20 mx-auto"
-          style={{
-            bottom: "16px",
-            maxWidth: "var(--sender-max-width)",
-            padding: "0 16px",
-          }}
-        >
+          {/* 发送框：绝对定位在 main 内部底部 */}
+          <div
+            className="absolute bottom-0 left-0 right-0 z-20 mx-auto"
+            style={{
+              bottom: "16px",
+              maxWidth: "var(--sender-max-width)",
+              padding: "0 16px",
+            }}
+          >
           <div className="flex items-end gap-2">
             {/* 胶囊容器：输入框 + 语音按钮，左右半圆 */}
             <div
@@ -597,8 +639,9 @@ function ChatShellInner() {
               }}
             />
           </div>
-        </div>
-      </div>
+          </div>
+        </main>
+      </motion.div>
 
       {/* 重命名弹窗 */}
       <Modal

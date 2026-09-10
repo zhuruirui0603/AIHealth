@@ -10,9 +10,13 @@ import { MenuOutlined } from "@ant-design/icons";
 
 export interface ChatHeaderProps {
   onOpenSidebar: () => void;
+  sidebarExpanded?: boolean;
 }
 
-export default function ChatHeader({ onOpenSidebar }: ChatHeaderProps) {
+export default function ChatHeader({
+  onOpenSidebar,
+  sidebarExpanded,
+}: ChatHeaderProps) {
   return (
     <header
       className="fixed inset-x-0 top-0 z-20 glass-panel"
@@ -20,13 +24,15 @@ export default function ChatHeader({ onOpenSidebar }: ChatHeaderProps) {
     >
       <div className="flex h-full px-4">
         <div className="flex items-center gap-3">
-          <Button
-            type="text"
-            className="md:hidden"
-            icon={<MenuOutlined />}
-            onClick={onOpenSidebar}
-            aria-label="打开侧边栏"
-          />
+          {/* 侧栏收起时显示汉堡按钮（桌面端收起 + 移动端始终） */}
+          {!sidebarExpanded && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              onClick={onOpenSidebar}
+              aria-label="打开侧边栏"
+            />
+          )}
           <div className="flex items-center gap-2">
             <div
               className="flex h-8 w-8 items-center justify-center rounded-full text-white"

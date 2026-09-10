@@ -191,7 +191,7 @@ body {
 }
 
 .ant-bubble-list-scroll-content {
-  padding-bottom: 140px;
+  padding: 0 16px 140px !important;
 }
 
 /* 列表项菜单按钮 hover 可见性 */
