@@ -7,11 +7,12 @@
  */
 
 import React from "react";
-import { Actions, Bubble, Sources } from "@ant-design/x";
+import { Actions, Bubble } from "@ant-design/x";
 import { XMarkdown } from "@ant-design/x-markdown";
 import { Button, Typography } from "antd";
 import { RedoOutlined } from "@ant-design/icons";
 import type { BubbleExtra } from "./types";
+import SourcesList from "./SourcesList";
 
 export const bubbleRole = {
   assistant: {
@@ -44,7 +45,8 @@ export const bubbleRole = {
 
       if (!content && !hasSources) return null;
 
-      const { onReload, messageId, isRequesting } = info.extraInfo ?? {};
+      const { onReload, messageId, isRequesting, showDisclaimer } =
+        info.extraInfo ?? {};
 
       return (
         <div className="flex flex-col gap-2">
@@ -78,22 +80,18 @@ export const bubbleRole = {
             ]}
             variant="borderless"
           />
-          {hasSources ? (
-            <Sources
-              title="参考来源"
-              defaultExpanded
-              items={deduped.map((s, i) => ({
-                key: s.chunk_id ?? String(i),
-                title: s.title,
-                url: s.url,
-                description: [s.source, s.domain, s.evidence_level]
-                  .filter(Boolean)
-                  .join(" · "),
-              }))}
-              onClick={(item) => {
-                if (item.url) window.open(item.url, "_blank");
+          {hasSources ? <SourcesList items={deduped} /> : null}
+          {showDisclaimer ? (
+            <Typography.Text
+              type="secondary"
+              style={{
+                fontSize: 12,
+                color: "var(--color-muted-foreground)",
+                lineHeight: 1.5,
               }}
-            />
+            >
+              本回答由 AI 生成，内容仅供参考，请仔细甄别，持续不适请及时就医。
+            </Typography.Text>
           ) : null}
         </div>
       );

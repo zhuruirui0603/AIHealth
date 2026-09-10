@@ -10,4 +10,6 @@ export interface BubbleExtra {
   onReload?: (id: string | number) => void;
   /** 是否正在请求中（请求中禁用 Retry） */
   isRequesting?: boolean;
+  /** 是否展示 AI 免责声明（仅 assistant 终态消息） */
+  showDisclaimer?: boolean;
 }

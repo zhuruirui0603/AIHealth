@@ -26,12 +26,14 @@ import bundle from "@/data/knowledge-bundle.json";
 import {
   createNutriProvider,
   createSearcher,
+  isHealthRelated,
   type NutriLocalMessage,
 } from "@/lib/providers/NutriHealthProvider";
 import * as localStore from "@/lib/local/conversationStore";
 import { getProfile, type UserProfileData } from "@/lib/local/profile";
+import { searchWebIfNeeded } from "@/lib/search/webSearch";
 import ProfileModal from "@/components/ProfileModal";
-import type { Conversation } from "@/types/chat";
+import type { Conversation, KnowledgeSource } from "@/types/chat";
 
 // --- 拆分模块 ---
 import { TEMP_PREFIX, QUICK_PROMPTS, newTempKey } from "./chat/constants";
@@ -213,28 +215,40 @@ function ChatShellInner() {
       const text = content.trim();
       if (!text || isRequesting) return;
 
-      const convId = currentRealId;
-      if (convId) {
-        localStore
-          .addMessage(convId, "user", text)
-          .then(() => refreshConversations())
-          .catch(() => {});
-        onRequest({ message: text } as any);
-      } else {
-        localStore.createConversation().then((conv) => {
-          const tempKey = activeKey;
-          setRealIdMap((prev) => ({ ...prev, [tempKey]: conv.id }));
-          localStorage.setItem("conversation_id", conv.id);
-          localStore
-            .addMessage(conv.id, "user", text)
-            .then(() => refreshConversations())
-            .catch(() => {});
-          onRequest({ message: text } as any);
+      // 联网搜索兜底：本地知识库命中不足时预取网络来源，
+      // 经 requestParams.webSources 透传给 Provider 合并注入
+      const localSources =
+        isHealthRelated(text) && searcher
+          ? searcher.search(text, 5)
+          : ([] as KnowledgeSource[]);
+      searchWebIfNeeded(text, localSources)
+        .catch(() => [] as KnowledgeSource[])
+        .then((webSources) => {
+          const request = { message: text, webSources } as any;
+
+          const convId = currentRealId;
+          if (convId) {
+            localStore
+              .addMessage(convId, "user", text)
+              .then(() => refreshConversations())
+              .catch(() => {});
+            onRequest(request);
+          } else {
+            localStore.createConversation().then((conv) => {
+              const tempKey = activeKey;
+              setRealIdMap((prev) => ({ ...prev, [tempKey]: conv.id }));
+              localStorage.setItem("conversation_id", conv.id);
+              localStore
+                .addMessage(conv.id, "user", text)
+                .then(() => refreshConversations())
+                .catch(() => {});
+              onRequest(request);
+            });
+          }
         });
-      }
       setInputValue("");
     },
-    [currentRealId, isRequesting, onRequest, activeKey, refreshConversations],
+    [currentRealId, isRequesting, onRequest, activeKey, refreshConversations, searcher],
   );
 
   // ---------- 重命名 ----------
@@ -402,20 +416,41 @@ function ChatShellInner() {
                 style={{ flex: 1, minHeight: 0, padding: '0 16px' }}
                 role={bubbleRole}
                 autoScroll
-                items={messages.map(({ id, message, status }) => ({
-                  key: id,
-                  role: message.role,
-                  content: String(message.content ?? ""),
-                  loading: status === "loading",
-                  streaming: status === "updating",
-                  extraInfo: {
-                    sources: (message as any).sources,
-                    error: (message as any).error,
-                    messageId: id,
-                    onReload: onReload as ((id: string | number) => void) | undefined,
-                    isRequesting,
-                  } satisfies BubbleExtra,
-                }))}
+                items={messages.map(({ id, message, status }, idx) => {
+                  const isFinal =
+                    status === "success" ||
+                    status === "error" ||
+                    status === "abort";
+                  // 找当前 assistant 消息前最近一条 user 消息：
+                  // 免责声明仅对营养健康相关提问显示
+                  let prevUserQuery = "";
+                  for (let j = idx - 1; j >= 0; j--) {
+                    if (messages[j].message.role === "user") {
+                      prevUserQuery = String(messages[j].message.content ?? "");
+                      break;
+                    }
+                  }
+                  return {
+                    key: id,
+                    role: message.role,
+                    content: String(message.content ?? ""),
+                    loading: status === "loading",
+                    streaming: status === "updating",
+                    extraInfo: {
+                      sources: (message as any).sources,
+                      error: (message as any).error,
+                      messageId: id,
+                      onReload: onReload as
+                        | ((id: string | number) => void)
+                        | undefined,
+                      isRequesting,
+                      showDisclaimer:
+                        message.role === "assistant" &&
+                        isFinal &&
+                        isHealthRelated(prevUserQuery),
+                    } satisfies BubbleExtra,
+                  };
+                })}
               />
             )}
           </div>
