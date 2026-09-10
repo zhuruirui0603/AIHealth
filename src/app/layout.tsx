@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NutriHealth AI",
+  title: "健康助手",
   description: "AI 营养健康决策助手",
 };
 
