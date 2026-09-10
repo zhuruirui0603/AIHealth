@@ -145,6 +145,49 @@ function ChatShellInner() {
     }),
   });
 
+  // ---------- 流式输出跟随滚动 ----------
+  // Bubble.List 的 autoScroll 仅在新消息进入时跳到底部，
+  // 流式内容增长时不会持续跟随。这里监听最后一条消息的内容变化，
+  // 在 streaming / loading 状态下显式调用 scrollTo 将视窗贴底。
+  const listRef = useRef<HTMLDivElement>(null);
+  const lastContentRef = useRef<string>("");
+  const lastMsgIdRef = useRef<string>("");
+
+  // 切换会话时重置记录，使新会话的首批消息也能触发滚动
+  useEffect(() => {
+    lastContentRef.current = "";
+    lastMsgIdRef.current = "";
+  }, [activeKey]);
+
+  useEffect(() => {
+    if (!messages.length) return;
+    const last = messages[messages.length - 1];
+    const content = String(last.message.content ?? "");
+    const msgId = String(last.id);
+    const isStreaming =
+      last.status === "loading" || last.status === "updating";
+    // 同一条消息且内容未变化时跳过
+    if (msgId === lastMsgIdRef.current && content === lastContentRef.current)
+      return;
+    lastMsgIdRef.current = msgId;
+    lastContentRef.current = content;
+
+    const node = listRef.current;
+    if (!node) return;
+    const scrollBox = node.querySelector<HTMLElement>(
+      ".ant-bubble-list-scroll-box",
+    );
+    if (!scrollBox) return;
+    // column-reverse（autoScroll）模式下贴底 = scrollTop 0；
+    // 普通模式下贴底 = scrollHeight
+    const isReverse =
+      getComputedStyle(scrollBox).flexDirection === "column-reverse";
+    scrollBox.scrollTo({
+      top: isReverse ? 0 : scrollBox.scrollHeight,
+      behavior: "auto",
+    });
+  }, [messages]);
+
   // ---------- 消息落库 + 标题生成 ----------
   const handledMsgIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -413,6 +456,7 @@ function ChatShellInner() {
               </div>
             ) : (
               <Bubble.List
+                ref={listRef as any}
                 style={{ flex: 1, minHeight: 0, padding: '0 16px' }}
                 role={bubbleRole}
                 autoScroll
