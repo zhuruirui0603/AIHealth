@@ -274,6 +274,7 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
       }
       open={open}
       onCancel={onClose}
+      onOk={onClose}
       width={560}
       footer={(_, { OkBtn, CancelBtn }) => (
         <div className="flex items-center justify-between">
