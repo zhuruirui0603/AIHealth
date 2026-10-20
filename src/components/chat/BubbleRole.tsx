@@ -13,6 +13,7 @@ import { Button, Typography } from "antd";
 import { RedoOutlined } from "@ant-design/icons";
 import type { BubbleExtra } from "./types";
 import SourcesList from "./SourcesList";
+import FollowUpCard from "./FollowUpCard";
 
 export const bubbleRole = {
   assistant: {
@@ -43,10 +44,10 @@ export const bubbleRole = {
         return true;
       });
 
-      if (!content && !hasSources) return null;
-
-      const { onReload, messageId, isRequesting, showDisclaimer } =
+      const { onReload, messageId, isRequesting, showDisclaimer, followUp, onFollowUpFeedback } =
         info.extraInfo ?? {};
+
+      if (!content && !hasSources && !followUp) return null;
 
       return (
         <div className="flex flex-col gap-2">
@@ -81,6 +82,16 @@ export const bubbleRole = {
             variant="borderless"
           />
           {hasSources ? <SourcesList items={deduped} /> : null}
+          {followUp ? (
+            <FollowUpCard
+              followUp={followUp}
+              onFeedback={
+                onFollowUpFeedback && messageId != null
+                  ? (status, note) => onFollowUpFeedback(messageId, status, note)
+                  : undefined
+              }
+            />
+          ) : null}
           {showDisclaimer ? (
             <Typography.Text
               type="secondary"

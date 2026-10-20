@@ -32,20 +32,37 @@ import {
 import * as localStore from "@/lib/local/conversationStore";
 import { getProfile, type UserProfileData } from "@/lib/local/profile";
 import { searchWebIfNeeded } from "@/lib/search/webSearch";
+import { buildGoalContext } from "@/lib/local/goalStore";
+import {
+  getFollowUpContext,
+  getFollowUpByMessageId,
+  listDuePending,
+  recordFollowUpFeedback,
+  saveFollowUp,
+} from "@/lib/local/followUpStore";
+import { addDaysKey, todayKey } from "@/lib/local/dateUtils";
 import ProfileModal from "@/components/ProfileModal";
-import type { Conversation, KnowledgeSource } from "@/types/chat";
+import GoalsModal from "@/components/GoalsModal";
+import type { Conversation, FollowUpInfo, KnowledgeSource } from "@/types/chat";
+
+/** 【跟进】行提取（仅在落库时解析一次，流式渲染期间不解析） */
+const FOLLOWUP_RE = /【跟进】\s*(\S[^\n]*)/;
 
 // --- 拆分模块 ---
 import { TEMP_PREFIX, QUICK_PROMPTS, newTempKey } from "./chat/constants";
 import type { BubbleExtra } from "./chat/types";
 import { bubbleRole } from "./chat/BubbleRole";
 import { useSpeechInput } from "./chat/useSpeechInput";
+import { useGoalReminders } from "./chat/useGoalReminders";
 import { generateTitle } from "./chat/titleGenerator";
 import Sidebar from "./chat/Sidebar";
 import ChatHeader from "./chat/ChatHeader";
 
 function ChatShellInner() {
-  const { modal } = App.useApp();
+  const { modal, notification } = App.useApp();
+
+  // 健康小目标提醒调度（返回手动触发检查函数，GoalsModal 保存后立即补查）
+  const checkGoalReminders = useGoalReminders();
 
   // ---------- 会话列表 ----------
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -70,6 +87,7 @@ function ChatShellInner() {
   // ---------- 用户画像 ----------
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [goalsOpen, setGoalsOpen] = useState(false);
 
   useEffect(() => {
     setUserProfile(getProfile());
@@ -135,17 +153,26 @@ function ChatShellInner() {
       try {
         const conv = await localStore.getConversation(key);
         if (!conv || !Array.isArray(conv.messages)) return [];
-        return conv.messages
+        // 记录"从 IndexedDB 恢复"的消息 id：这些消息不重复落库提取【跟进】
+        const restoredIds = new Set<string>();
+        const items = conv.messages
           .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m, i) => ({
-            id: m.id ?? `${key}-${i}`,
-            message: {
-              content: m.content,
-              role: m.role,
-              sources: m.sources,
-            } as NutriLocalMessage,
-            status: "success" as const,
-          }));
+          .map((m, i) => {
+            const id = m.id ?? `${key}-${i}`;
+            restoredIds.add(String(id));
+            return {
+              id,
+              message: {
+                content: m.content,
+                role: m.role,
+                sources: m.sources,
+                followUp: m.followUp,
+              } as NutriLocalMessage,
+              status: "success" as const,
+            };
+          });
+        restoredIdsRef.current = restoredIds;
+        return items;
       } catch {
         return [];
       }
@@ -202,8 +229,13 @@ function ChatShellInner() {
     scrollBox.scrollTop = isReverse ? 0 : scrollBox.scrollHeight;
   }, [messages]);
 
-  // ---------- 消息落库 + 标题生成 ----------
+  // ---------- 消息落库 + 标题生成 + 【跟进】提取 ----------
   const handledMsgIdsRef = useRef<Set<string>>(new Set());
+  // 从 IndexedDB 恢复的消息 id（defaultMessages 填充）：不重复提取【跟进】
+  const restoredIdsRef = useRef<Set<string>>(new Set());
+  // xChat 消息 id → followUps 记录 id（本会话内新建的跟进；刷新后靠 messageId 直查）
+  const followUpIdByMsgRef = useRef<Record<string, string>>({});
+
   useEffect(() => {
     const convId = currentRealId;
     if (!convId) return;
@@ -217,7 +249,37 @@ function ChatShellInner() {
           handledMsgIdsRef.current.add(msgId);
           localStore
             .addMessage(convId, "assistant", message.content, (message as any).sources)
-            .then(() => {
+            .then(async (saved) => {
+              // 【跟进】提取：仅 success 且非恢复消息（流式期间不解析，此处只跑一次）
+              const savedId = saved.id;
+              if (
+                status === "success" &&
+                savedId &&
+                !restoredIdsRef.current.has(msgId)
+              ) {
+                const m = message.content.match(FOLLOWUP_RE);
+                const text = m?.[1]?.trim();
+                if (text && text.length >= 6 && text.length <= 60) {
+                  // 提到"明/后天" → 到期日为明天，否则今天
+                  const due = /明|后天/.test(text)
+                    ? addDaysKey(todayKey(), 1)
+                    : todayKey();
+                  try {
+                    const record = await saveFollowUp({
+                      messageId: savedId,
+                      conversationId: convId,
+                      content: text,
+                      dueDate: due,
+                    });
+                    followUpIdByMsgRef.current[msgId] = record.id;
+                    await localStore.updateMessage(savedId, {
+                      followUp: { content: text, dueDate: due, status: "pending" },
+                    });
+                  } catch {
+                    // 跟进落库失败不影响消息本身
+                  }
+                }
+              }
               refreshConversations();
               if (status === "success") {
                 const conv = conversations.find((c) => c.id === convId);
@@ -235,6 +297,103 @@ function ChatShellInner() {
       break;
     }
   }, [messages, currentRealId, conversations, refreshConversations]);
+
+  // ---------- 跟进反馈（卡片三档按钮 → 落库 → 实时刷新卡片） ----------
+  const [followUpOverrides, setFollowUpOverrides] = useState<
+    Record<string, FollowUpInfo>
+  >({});
+
+  const handleFollowUpFeedback = useCallback(
+    async (
+      messageId: string | number,
+      status: "done" | "partial" | "missed",
+      note?: string,
+    ) => {
+      try {
+        const key = String(messageId);
+        const followUpId =
+          followUpIdByMsgRef.current[key] ??
+          (await getFollowUpByMessageId(key))?.id;
+        if (!followUpId) return;
+        await recordFollowUpFeedback(followUpId, status, note);
+        setFollowUpOverrides((prev) => ({
+          ...prev,
+          [key]: {
+            ...(prev[key] ?? { content: "", dueDate: todayKey() }),
+            status,
+            feedbackNote: note,
+            feedbackAt: new Date().toISOString(),
+          },
+        }));
+      } catch {
+        // 反馈失败静默，卡片保持待跟进
+      }
+    },
+    [],
+  );
+
+  // ---------- 到期小回访：打开页面时弹通知收集反馈 ----------
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const due = await listDuePending();
+        if (cancelled || due.length === 0) return;
+        const show = due.slice(0, 3);
+        show.forEach((fu, idx) => {
+          const key = `fu-${fu.id}`;
+          const more =
+            idx === show.length - 1 && due.length > show.length
+              ? `\n还有 ${due.length - show.length} 条跟进提醒，可在对话记录中查看`
+              : "";
+          notification.open({
+            key,
+            message: "健康小回访",
+            description: `${fu.content}${more}`,
+            duration: 0,
+            btn: (
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => {
+                    handleFollowUpFeedback(fu.messageId, "done");
+                    notification.destroy(key);
+                  }}
+                >
+                  做到了
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    handleFollowUpFeedback(fu.messageId, "partial");
+                    notification.destroy(key);
+                  }}
+                >
+                  部分做到
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    handleFollowUpFeedback(fu.messageId, "missed");
+                    notification.destroy(key);
+                  }}
+                >
+                  还没有
+                </Button>
+              </div>
+            ),
+          });
+        });
+      } catch {
+        // ignore
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [notification, handleFollowUpFeedback]);
 
   // ---------- 会话操作 ----------
   const handleNew = useCallback(() => {
@@ -280,8 +439,19 @@ function ChatShellInner() {
           : ([] as KnowledgeSource[]);
       searchWebIfNeeded(text, localSources)
         .catch(() => [] as KnowledgeSource[])
-        .then((webSources) => {
-          const request = { message: text, webSources } as any;
+        .then(async (webSources) => {
+          // 健康目标 + 跟进反馈上下文：提交时新鲜读取（provider 被 memo，不能在创建时捕获），
+          // 经 requestParams 透传，由 Provider 注入 system prompt
+          const [goalContext, followUpContext] = await Promise.all([
+            buildGoalContext().catch(() => ""),
+            getFollowUpContext().catch(() => ""),
+          ]);
+          const request = {
+            message: text,
+            webSources,
+            goalContext,
+            followUpContext,
+          } as any;
 
           const convId = currentRealId;
           if (convId) {
@@ -401,6 +571,7 @@ function ChatShellInner() {
       onNew={handleNew}
       onMenuAction={handleMenuAction}
       onOpenProfile={() => setProfileOpen(true)}
+      onOpenGoals={() => setGoalsOpen(true)}
     />
   );
 
@@ -535,6 +706,10 @@ function ChatShellInner() {
                         message.role === "assistant" &&
                         isFinal &&
                         isHealthRelated(prevUserQuery),
+                      followUp:
+                        followUpOverrides[String(id)] ??
+                        (message as any).followUp,
+                      onFollowUpFeedback: handleFollowUpFeedback,
                     } satisfies BubbleExtra,
                   };
                 })}
@@ -668,6 +843,13 @@ function ChatShellInner() {
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
         onSaved={(profile) => setUserProfile(profile)}
+      />
+
+      {/* 健康小目标弹窗 */}
+      <GoalsModal
+        open={goalsOpen}
+        onClose={() => setGoalsOpen(false)}
+        onChanged={checkGoalReminders}
       />
     </div>
   );

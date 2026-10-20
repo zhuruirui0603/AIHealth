@@ -6,7 +6,12 @@
  */
 
 import { db, genId, type LocalConversation, type LocalMessage } from "./db";
-import type { Conversation, KnowledgeSource, Message } from "@/types/chat";
+import type {
+  Conversation,
+  FollowUpInfo,
+  KnowledgeSource,
+  Message,
+} from "@/types/chat";
 
 const nowISO = () => new Date().toISOString();
 
@@ -52,6 +57,7 @@ export async function getConversation(id: string): Promise<Conversation | null> 
       role: m.role,
       content: m.content,
       sources: m.sources,
+      followUp: m.followUp,
       created_at: m.createdAt,
     })),
     created_at: conv.createdAt,
@@ -102,6 +108,7 @@ export async function addMessage(
   role: "user" | "assistant",
   content: string,
   sources?: KnowledgeSource[],
+  followUp?: FollowUpInfo,
 ): Promise<Message> {
   const ts = nowISO();
   const localMsg: LocalMessage = {
@@ -110,6 +117,7 @@ export async function addMessage(
     role,
     content,
     sources,
+    followUp,
     createdAt: ts,
   };
   await db.transaction("rw", db.messages, db.conversations, async () => {
@@ -121,6 +129,7 @@ export async function addMessage(
     role,
     content,
     sources,
+    followUp,
     created_at: ts,
   };
 }
@@ -128,10 +137,11 @@ export async function addMessage(
 /** 更新 assistant 消息内容（流式完成后落库） */
 export async function updateMessage(
   id: string,
-  patch: { content?: string; sources?: KnowledgeSource[] },
+  patch: { content?: string; sources?: KnowledgeSource[]; followUp?: FollowUpInfo },
 ): Promise<void> {
   const update: Partial<LocalMessage> = {};
   if (patch.content !== undefined) update.content = patch.content;
   if (patch.sources !== undefined) update.sources = patch.sources;
+  if (patch.followUp !== undefined) update.followUp = patch.followUp;
   await db.messages.update(id, update);
 }

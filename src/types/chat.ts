@@ -11,12 +11,25 @@ export interface KnowledgeSource {
   url?: string;
 }
 
+/** AI 主动跟进（回访）信息：随 assistant 消息落库，用于到期提醒与反馈闭环 */
+export interface FollowUpInfo {
+  /** 跟进问题原文（一句话） */
+  content: string;
+  /** 到期日期，本地时区 "YYYY-MM-DD" */
+  dueDate: string;
+  /** 跟进状态（字符串枚举，IndexedDB 索引不用 boolean） */
+  status: "pending" | "done" | "partial" | "missed";
+  feedbackNote?: string;
+  feedbackAt?: string;
+}
+
 export interface Message {
   id?: string;
   role: "user" | "assistant" | "system";
   content: string;
   created_at?: string;
   sources?: KnowledgeSource[];
+  followUp?: FollowUpInfo;
 }
 
 export interface Conversation {

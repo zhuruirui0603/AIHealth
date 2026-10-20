@@ -1,4 +1,4 @@
-import type { KnowledgeSource } from "@/types/chat";
+import type { FollowUpInfo, KnowledgeSource } from "@/types/chat";
 
 /** Bubble 消息的 extraInfo（由 BubbleItemType.extraInfo 透传到 footer 的 info） */
 export interface BubbleExtra {
@@ -12,4 +12,12 @@ export interface BubbleExtra {
   isRequesting?: boolean;
   /** 是否展示 AI 免责声明（仅 assistant 终态消息） */
   showDisclaimer?: boolean;
+  /** AI 主动跟进（回访）卡片数据 */
+  followUp?: FollowUpInfo;
+  /** 跟进反馈回调（记录反馈并实时刷新卡片） */
+  onFollowUpFeedback?: (
+    messageId: string | number,
+    status: "done" | "partial" | "missed",
+    note?: string,
+  ) => void;
 }

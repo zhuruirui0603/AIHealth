@@ -8,6 +8,7 @@ import React from "react";
 import { Conversations } from "@ant-design/x";
 import { Button, Input } from "antd";
 import {
+  AimOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -29,6 +30,7 @@ export interface SidebarProps {
   onNew: () => void;
   onMenuAction: (action: string, id: string) => void;
   onOpenProfile: () => void;
+  onOpenGoals: () => void;
 }
 
 export default function Sidebar({
@@ -40,6 +42,7 @@ export default function Sidebar({
   onNew,
   onMenuAction,
   onOpenProfile,
+  onOpenGoals,
 }: SidebarProps) {
   const q = searchText.trim().toLowerCase();
   const list = q
@@ -188,15 +191,26 @@ export default function Sidebar({
           background: "rgba(240,253,250,0.5)",
         }}
       >
-        <Button
-          type="text"
-          size="small"
-          icon={<UserOutlined />}
-          onClick={onOpenProfile}
-          style={{ color: "var(--color-muted-foreground)", fontSize: 13 }}
-        >
-          个人信息
-        </Button>
+        <span className="flex items-center gap-1">
+          <Button
+            type="text"
+            size="small"
+            icon={<AimOutlined />}
+            onClick={onOpenGoals}
+            style={{ color: "var(--color-muted-foreground)", fontSize: 13 }}
+          >
+            健康目标
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            icon={<UserOutlined />}
+            onClick={onOpenProfile}
+            style={{ color: "var(--color-muted-foreground)", fontSize: 13 }}
+          >
+            个人信息
+          </Button>
+        </span>
         <span
           className="ml-auto"
           style={{ fontSize: 11, color: "var(--color-muted-foreground)" }}

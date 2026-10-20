@@ -66,6 +66,7 @@ export interface NutriLocalMessage {
   content: string;
   role: "user" | "assistant";
   sources?: KnowledgeSource[];
+  followUp?: import("@/types/chat").FollowUpInfo;
   error?: string;
 }
 
@@ -134,8 +135,20 @@ export function createNutriProvider(
       const sources = [...localSources, ...webSources];
       pendingSources = sources;
 
-      // 3. 构建 system prompt（画像 + RAG 上下文）
-      const systemPrompt = buildSystemPromptWithRag(profile, sources);
+      // goalContext / followUpContext 同样由 ChatShell 提交前异步预取并透传
+      // （provider 实例在 ChatShell 中被 memo，不能在创建时捕获，否则会拿到过期状态）
+      const goalContext =
+        typeof requestParams?.goalContext === "string" ? requestParams.goalContext : "";
+      const followUpContext =
+        typeof requestParams?.followUpContext === "string"
+          ? requestParams.followUpContext
+          : "";
+
+      // 3. 构建 system prompt（画像 + RAG + 目标/跟进上下文）
+      const systemPrompt = buildSystemPromptWithRag(profile, sources, {
+        goalContext,
+        followUpContext,
+      });
 
       // 4. 注入消息前部
       return {

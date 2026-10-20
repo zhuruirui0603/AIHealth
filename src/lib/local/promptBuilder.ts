@@ -2,10 +2,13 @@
  * System prompt 构建器 —— 1:1 移植自 backend/app/services/prompt_builder.py
  *
  * 后端原文件头注释提醒：本文件是 Python 版的同步副本，修改任一方需同步另一方。
+ * demo 版在此基础上扩展了「健康小目标」「主动跟进」「跟进情况」三个前端独有段。
  */
 
 import type { KnowledgeSource } from "@/types/chat";
 import { type UserProfileData } from "./profile";
+import type { GoalWithStats } from "./goalStore";
+import type { LocalFollowUp } from "./db";
 
 /**
  * SEED_USER 画像，取自 backend/app/seed/seed_data.py
@@ -39,12 +42,21 @@ export const SYSTEM_PROMPT_TEMPLATE = `你是 NutriHealth AI，一个专业的 A
 ## 注意
 [需要用户注意的事项、风险提示或建议咨询专业人士的情况]
 
+## 主动跟进
+如果本次回答给出了具体、可执行的健康行动建议（如饮水目标、运动安排、饮食调整、作息改变），请在回答最末尾、「注意」部分之后另起一行，单独输出一行跟进问题，格式严格为：
+【跟进】<一句话跟进问题>
+- 跟进问题要具体、温和、一句话以内，并约定一个可检验的时间点（如"明晚""这周末"）。
+  示例：【跟进】明天晚饭后按建议散步 20 分钟，做到了回来告诉我一声？
+- 如果本次回答只是概念解释、没有可执行建议，则不要输出【跟进】这一行。
+- 【跟进】行必须单独成行，是全文最后一行。
+
 ## 回答原则
 - 温和、清晰、不过度绝对化
 - 不制造健康焦虑
 - 不进行疾病诊断或开具处方
 - 如遇高风险问题（紧急症状、疾病诊断请求、药物高风险问题等），不诊断、不处方，建议用户寻求专业医疗帮助
 - 如果信息不足以下结论，请坦诚说明并告知需要补充什么信息
+- 结合「健康小目标」「跟进情况」的上下文，让建议与用户当前的执行进度衔接
 - 回答使用中文
 `;
 
@@ -72,13 +84,17 @@ export function buildSystemPrompt(profile: UserProfileData): string {
   );
 }
 
-/** 1:1 移植 build_system_prompt_with_rag */
+/** 1:1 移植 build_system_prompt_with_rag（demo 扩展：extras 附加目标/跟进上下文段） */
 export function buildSystemPromptWithRag(
   profile: UserProfileData,
   retrievedChunks: KnowledgeSource[],
+  extras?: { goalContext?: string; followUpContext?: string },
 ): string {
   const basePrompt = buildSystemPrompt(profile);
-  if (!retrievedChunks.length) return basePrompt;
+  if (!retrievedChunks.length) {
+    const extrasText = (extras?.goalContext || "") + (extras?.followUpContext || "");
+    return extrasText ? basePrompt + extrasText : basePrompt;
+  }
 
   const knowledgeSections = retrievedChunks.map((chunk, i) => {
     return `[${i + 1}] 来源: ${chunk.source || "未知"}
@@ -97,5 +113,58 @@ export function buildSystemPromptWithRag(
 
 ${knowledgeText}`;
 
-  return basePrompt + knowledgeSection;
+  const extrasText = (extras?.goalContext || "") + (extras?.followUpContext || "");
+  return basePrompt + knowledgeSection + extrasText;
+}
+
+/** 构建「## 健康小目标」上下文段（goalStore.buildGoalContext 调用） */
+export function formatGoalSection(goals: GoalWithStats[], today: string): string {
+  if (!goals.length) return "";
+  const lines = goals.map((g, i) => {
+    const parts: string[] = [];
+    if (g.frequency === "weekly") {
+      const target = g.targetPerWeek ?? 3;
+      parts.push(`本周 ${g.weekCount}/${target} 次`);
+    } else if (g.doneToday) {
+      parts.push(`今日已打卡 ✓，已连续坚持 ${g.streak} 天`);
+    } else if (g.streak > 0) {
+      parts.push(`今日未打卡（上一轮连续 ${g.streak} 天）`);
+    } else {
+      parts.push("尚未开始打卡");
+    }
+    const label = g.frequency === "weekly" ? "每周" : "每日";
+    return `${i + 1}. [${label}] ${g.title} —— ${parts.join("，")}`;
+  });
+  return `\n\n## 健康小目标
+以下是用户设置的结构化健康目标及截至 ${today} 的执行进度，请结合进度给出建议（已达标可肯定并适度进阶，未达标可温和提醒，不施加焦虑）：
+
+${lines.join("\n")}`;
+}
+
+/** 构建「## 跟进情况」上下文段（followUpStore.getFollowUpContext 调用） */
+export function formatFollowUpSection(
+  pending: LocalFollowUp[],
+  feedbacked: LocalFollowUp[],
+  today: string,
+): string {
+  if (!pending.length && !feedbacked.length) return "";
+  const lines: string[] = [];
+  for (const f of pending) {
+    const dueLabel = f.dueDate <= today ? "已到期" : `到期日 ${f.dueDate}`;
+    lines.push(`- 待跟进（${dueLabel}，用户尚未反馈）：「${f.content}」`);
+  }
+  const statusLabel: Record<string, string> = {
+    done: "已做到",
+    partial: "部分做到",
+    missed: "还没做到",
+  };
+  for (const f of feedbacked) {
+    lines.push(
+      `- 问：「${f.content}」→ 用户反馈：${statusLabel[f.status] || f.status}${f.feedbackNote ? `（${f.feedbackNote}）` : ""}`,
+    );
+  }
+  return `\n\n## 跟进情况
+以下是之前你给用户留下的跟进问题及其反馈，请在本回答中衔接这些信息：
+${lines.join("\n")}
+请根据反馈调整建议力度：已做到给予肯定并适度进阶；未做到则降低门槛、分析障碍，不施加焦虑。`;
 }
