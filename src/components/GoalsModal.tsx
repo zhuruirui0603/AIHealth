@@ -178,13 +178,13 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
       {/* 行 1：标题 + 类型 + 进度 */}
       <div className="flex items-center gap-2">
         <span style={{ fontSize: 16 }}>{goal.emoji || "🎯"}</span>
-        <span className="font-medium" style={{ fontSize: 14 }}>
+        <span className="min-w-0 flex-1 truncate font-medium" style={{ fontSize: 14 }}>
           {goal.title}
         </span>
-        <Tag color={goal.frequency === "weekly" ? "purple" : "cyan"} style={{ marginRight: 0 }}>
+        <Tag color={goal.frequency === "weekly" ? "purple" : "cyan"} className="shrink-0" style={{ marginRight: 0 }}>
           {goal.frequency === "weekly" ? "每周" : "每日"}
         </Tag>
-        <span className="ml-auto" style={{ fontSize: 12, color: "var(--color-text-secondary, #6b7280)" }}>
+        <span className="shrink-0" style={{ fontSize: 12, color: "var(--color-text-secondary, #6b7280)" }}>
           {goal.frequency === "weekly"
             ? `本周 ${goal.weekCount}/${goal.targetPerWeek ?? 3} 次`
             : goal.doneToday
@@ -217,8 +217,8 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
           ))}
         </div>
       </div>
-      {/* 行 3：打卡 + 提醒设置 */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+      {/* 行 3：打卡 + 归档/删除（窄屏也不换行） */}
+      <div className="mt-2 flex items-center gap-2">
         <Button
           size="small"
           type={goal.doneToday ? "default" : "primary"}
@@ -227,6 +227,24 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
         >
           {goal.doneToday ? "已打卡 ✓" : "今日打卡"}
         </Button>
+        <span className="ml-auto flex items-center gap-2">
+          <Typography.Link onClick={() => handleArchive(goal)} style={{ fontSize: 12 }}>
+            归档
+          </Typography.Link>
+          <Popconfirm
+            title="删除目标"
+            description="打卡记录将一并删除，确定吗？"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(goal.id)}
+          >
+            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </span>
+      </div>
+      {/* 行 4：提醒设置（独立一行，仅在两项之间换行） */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex items-center gap-1" style={{ fontSize: 12 }}>
           <Typography.Text type="secondary">提醒</Typography.Text>
           <Input
@@ -245,21 +263,6 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
             onChange={(v) => handleBrowserNotifyChange(goal, v)}
           />
         </span>
-        <span className="ml-auto flex items-center gap-2">
-          <Typography.Link onClick={() => handleArchive(goal)} style={{ fontSize: 12 }}>
-            归档
-          </Typography.Link>
-          <Popconfirm
-            title="删除目标"
-            description="打卡记录将一并删除，确定吗？"
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDelete(goal.id)}
-          >
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </span>
       </div>
     </div>
   );
@@ -277,11 +280,11 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
       onOk={onClose}
       width={560}
       footer={(_, { OkBtn, CancelBtn }) => (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             提醒在页面打开时生效；关闭页面后将无法提醒
           </Typography.Text>
-          <div>
+          <div className="flex justify-end">
             <CancelBtn />
             <OkBtn />
           </div>
@@ -308,6 +311,7 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
                   onPressEnter={handleAdd}
                 />
               </div>
+              {/* 行 2：频率 + 每周次数 */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <Segmented
                   size="small"
@@ -330,6 +334,9 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
                     />
                   </span>
                 )}
+              </div>
+              {/* 行 3：提醒设置 */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <span className="flex items-center gap-1" style={{ fontSize: 12 }}>
                   <Typography.Text type="secondary">提醒</Typography.Text>
                   <Switch
@@ -363,14 +370,15 @@ export default function GoalsModal({ open, onClose, onChanged }: GoalsModalProps
                     />
                   </span>
                 )}
-                <span className="ml-auto flex gap-2">
-                  <Button size="small" onClick={() => setShowAdd(false)}>
-                    取消
-                  </Button>
-                  <Button size="small" type="primary" onClick={handleAdd}>
-                    保存
-                  </Button>
-                </span>
+              </div>
+              {/* 行 4：操作按钮（独立一行，右对齐） */}
+              <div className="flex justify-end gap-2">
+                <Button size="small" onClick={() => setShowAdd(false)}>
+                  取消
+                </Button>
+                <Button size="small" type="primary" onClick={handleAdd}>
+                  保存
+                </Button>
               </div>
             </div>
           </div>
